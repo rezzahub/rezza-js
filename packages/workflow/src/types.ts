@@ -33,30 +33,30 @@ export type StepInput = {
   pii?: boolean;
 
   action?:
-    | "print"
-    | "display"
-    | "say"
-    | "ask"
-    | "write"
-    | "show"
-    | "read"
-    | "speak"
-    | "query"
-    | "announce"
-    | "present"
-    | "narrate"
-    | "request"
-    | "prompt";
+  | "print"
+  | "display"
+  | "say"
+  | "ask"
+  | "write"
+  | "show"
+  | "read"
+  | "speak"
+  | "query"
+  | "announce"
+  | "present"
+  | "narrate"
+  | "request"
+  | "prompt";
 } & (
-  | { type: null }
-  | {
+    | { type: null }
+    | {
       /** The content value for string-based formats like HTML, Markdown or URI */
       content: string;
 
       /** The format/type specifying how to interpret the string content */
       type: "html" | "md" | "uri";
     }
-  | {
+    | {
       /** The content value for JSON data as a JavaScript object */
       content: object;
 
@@ -66,7 +66,7 @@ export type StepInput = {
       /** Optional JSON schema to validate the input content */
       schema?: object;
     }
-);
+  );
 
 /**
  * Represents the context for a step in the workflow.
@@ -308,10 +308,12 @@ export type DAGNode<V, D extends string, S extends object = object> = {
   ) => string[][];
 };
 
+export type Without<T, K extends string | number | symbol> = T extends any ? Omit<T, K> : never;
+
 /**
  * v0.8: Node configuration for addNode method
  */
-export interface NodeConfig<K extends string, D extends string, V> {
+export type NodeConfig<K extends string, D extends string, V> = {
   /** The key for the new node */
   key: K;
   /** Node type */
@@ -329,7 +331,6 @@ export interface NodeConfig<K extends string, D extends string, V> {
   /** Instance generation function for fan-out patterns */
   instances?: (context: WorkflowContext) => string[][];
   /** Single node instance function for current node tags */
-  instance?: (context: WorkflowContext) => string[];
   /** Dynamic instance expansion for saga patterns */
   sagaInstances?: (
     context: WorkflowContext & { getInstanceResults: () => unknown[] },
@@ -338,4 +339,11 @@ export interface NodeConfig<K extends string, D extends string, V> {
   title?: string;
   /** Optional description of the node's purpose or functionality */
   description?: string;
-}
+} & (
+    | {}
+    | { instance: (context: WorkflowContext) => string[] }
+    | {
+      instances: (context: WorkflowContext) => string[][],
+      instancesSaga: (context: WorkflowContext, results: V[]) => string[][],
+    }
+  );

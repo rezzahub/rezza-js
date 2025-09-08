@@ -1,148 +1,6 @@
-// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+// Bun Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`Workflow > basic step 1`] = `
-[
-  "a",
-  "b",
-  "c",
-  "d",
-]
-`;
-
-exports[`Workflow > basic step 2`] = `
-[
-  "b",
-  "c",
-]
-`;
-
-exports[`Workflow > basic step 3`] = `
-{
-  "a": {
-    "status": "done",
-    "value": 1,
-  },
-  "b": {
-    "status": "done",
-    "value": "hello 1",
-  },
-  "c": {
-    "status": "intr",
-    "step": {
-      "deadline": 1704067200000,
-      "description": "Enter a number",
-      "key": [
-        "c",
-        "need_number",
-      ],
-      "schema": {
-        "properties": {
-          "x": {
-            "title": "sweet number",
-            "type": "number",
-            Symbol(TypeBox.Kind): "Number",
-          },
-        },
-        "required": [
-          "x",
-        ],
-        "type": "object",
-        Symbol(TypeBox.Kind): "Object",
-      },
-      "title": "Enter a number",
-    },
-  },
-  "d": {
-    "nodes": [
-      "c",
-    ],
-    "status": "pending",
-  },
-}
-`;
-
-exports[`Workflow > basic step 4`] = `
-{
-  "a": {
-    "status": "done",
-    "value": 1,
-  },
-  "b": {
-    "status": "done",
-    "value": "hello 1",
-  },
-  "c": {
-    "status": "done",
-    "value": true,
-  },
-  "d": {
-    "status": "done",
-    "value": {
-      "flag": true,
-      "value": 7,
-    },
-  },
-}
-`;
-
-exports[`Workflow > basic step 5`] = `
-{
-  "a": {
-    "status": "done",
-    "value": 1,
-  },
-  "b": {
-    "status": "done",
-    "value": "hello 1",
-  },
-  "c": {
-    "error": [Error: Expected required property],
-    "status": "err",
-  },
-  "d": {
-    "nodes": [
-      "c",
-    ],
-    "status": "pending",
-  },
-}
-`;
-
-exports[`Workflow > basic step 6`] = `
-[
-  {
-    "c": {
-      "deadline": 1704067200000,
-      "description": "Enter a number",
-      "key": "need_number",
-      "schema": {
-        "properties": {
-          "x": {
-            "title": "sweet number",
-            "type": "number",
-            Symbol(TypeBox.Kind): "Number",
-          },
-        },
-        "required": [
-          "x",
-        ],
-        "type": "object",
-        Symbol(TypeBox.Kind): "Object",
-      },
-      "title": "Enter a number",
-    },
-    "k": [
-      "c",
-      "need_number",
-    ],
-    "v": {
-      "y": 2,
-    },
-  },
-]
-`;
-
-exports[`Workflow > basic usage 1`] = `
+exports[`Workflow basic usage 1`] = `
 [
   {
     "dependencies": [],
@@ -152,8 +10,8 @@ exports[`Workflow > basic usage 1`] = `
     "optionalDeps": undefined,
     "optionalDepsLimit": undefined,
     "schema": {
+      [Symbol(TypeBox.Kind)]: "Number",
       "type": "number",
-      Symbol(TypeBox.Kind): "Number",
     },
     "stepSchemas": undefined,
     "title": "a",
@@ -169,8 +27,8 @@ exports[`Workflow > basic usage 1`] = `
     "optionalDeps": undefined,
     "optionalDepsLimit": undefined,
     "schema": {
+      [Symbol(TypeBox.Kind)]: "String",
       "type": "string",
-      Symbol(TypeBox.Kind): "String",
     },
     "stepSchemas": undefined,
     "title": undefined,
@@ -186,8 +44,8 @@ exports[`Workflow > basic usage 1`] = `
     "optionalDeps": undefined,
     "optionalDepsLimit": undefined,
     "schema": {
+      [Symbol(TypeBox.Kind)]: "Boolean",
       "type": "boolean",
-      Symbol(TypeBox.Kind): "Boolean",
     },
     "stepSchemas": undefined,
     "title": undefined,
@@ -204,14 +62,15 @@ exports[`Workflow > basic usage 1`] = `
     "optionalDeps": undefined,
     "optionalDepsLimit": undefined,
     "schema": {
+      [Symbol(TypeBox.Kind)]: "Object",
       "properties": {
         "flag": {
+          [Symbol(TypeBox.Kind)]: "Boolean",
           "type": "boolean",
-          Symbol(TypeBox.Kind): "Boolean",
         },
         "value": {
+          [Symbol(TypeBox.Kind)]: "Number",
           "type": "number",
-          Symbol(TypeBox.Kind): "Number",
         },
       },
       "required": [
@@ -219,7 +78,6 @@ exports[`Workflow > basic usage 1`] = `
         "flag",
       ],
       "type": "object",
-      Symbol(TypeBox.Kind): "Object",
     },
     "stepSchemas": undefined,
     "title": undefined,
@@ -228,29 +86,33 @@ exports[`Workflow > basic usage 1`] = `
 ]
 `;
 
-exports[`Workflow > basic usage 2`] = `
+exports[`Workflow basic usage 2`] = `
 [
   "b",
   "c",
 ]
 `;
 
-exports[`Workflow > basic usage 3`] = `
+exports[`Workflow basic usage 3`] = `
 {
   "a": {
     "status": "done",
+    "tags": undefined,
     "value": 1,
   },
   "b": {
     "status": "done",
+    "tags": undefined,
     "value": "hello 1",
   },
   "c": {
     "status": "done",
+    "tags": undefined,
     "value": true,
   },
   "d": {
     "status": "done",
+    "tags": undefined,
     "value": {
       "flag": true,
       "value": 7,
@@ -279,10 +141,12 @@ exports[`Workflow basic step 3`] = `
 {
   "a": {
     "status": "done",
+    "tags": undefined,
     "value": 1,
   },
   "b": {
     "status": "done",
+    "tags": undefined,
     "value": "hello 1",
   },
   "c": {
@@ -310,6 +174,7 @@ exports[`Workflow basic step 3`] = `
       },
       "title": "Enter a number",
     },
+    "tags": undefined,
   },
   "d": {
     "nodes": [
@@ -324,18 +189,22 @@ exports[`Workflow basic step 4`] = `
 {
   "a": {
     "status": "done",
+    "tags": undefined,
     "value": 1,
   },
   "b": {
     "status": "done",
+    "tags": undefined,
     "value": "hello 1",
   },
   "c": {
     "status": "done",
+    "tags": undefined,
     "value": true,
   },
   "d": {
     "status": "done",
+    "tags": undefined,
     "value": {
       "flag": true,
       "value": 7,
@@ -348,15 +217,18 @@ exports[`Workflow basic step 5`] = `
 {
   "a": {
     "status": "done",
+    "tags": undefined,
     "value": 1,
   },
   "b": {
     "status": "done",
+    "tags": undefined,
     "value": "hello 1",
   },
   "c": {
     "error": [AssertError: Expected required property],
     "status": "err",
+    "tags": undefined,
   },
   "d": {
     "nodes": [
@@ -399,107 +271,6 @@ exports[`Workflow basic step 6`] = `
     },
   },
 ]
-`;
-
-exports[`Workflow basic usage 1`] = `
-[
-  {
-    "dependencies": [],
-    "description": "aaaa",
-    "isSaga": false,
-    "node": "a",
-    "schema": {
-      [Symbol(TypeBox.Kind)]: "Number",
-      "type": "number",
-    },
-    "title": "a",
-  },
-  {
-    "dependencies": [
-      "a",
-    ],
-    "description": undefined,
-    "isSaga": false,
-    "node": "b",
-    "schema": {
-      [Symbol(TypeBox.Kind)]: "String",
-      "type": "string",
-    },
-    "title": undefined,
-  },
-  {
-    "dependencies": [
-      "a",
-    ],
-    "description": undefined,
-    "isSaga": false,
-    "node": "c",
-    "schema": {
-      [Symbol(TypeBox.Kind)]: "Boolean",
-      "type": "boolean",
-    },
-    "title": undefined,
-  },
-  {
-    "dependencies": [
-      "b",
-      "c",
-    ],
-    "description": undefined,
-    "isSaga": false,
-    "node": "d",
-    "schema": {
-      [Symbol(TypeBox.Kind)]: "Object",
-      "properties": {
-        "flag": {
-          [Symbol(TypeBox.Kind)]: "Boolean",
-          "type": "boolean",
-        },
-        "value": {
-          [Symbol(TypeBox.Kind)]: "Number",
-          "type": "number",
-        },
-      },
-      "required": [
-        "value",
-        "flag",
-      ],
-      "type": "object",
-    },
-    "title": undefined,
-  },
-]
-`;
-
-exports[`Workflow basic usage 2`] = `
-[
-  "b",
-  "c",
-]
-`;
-
-exports[`Workflow basic usage 3`] = `
-{
-  "a": {
-    "status": "done",
-    "value": 1,
-  },
-  "b": {
-    "status": "done",
-    "value": "hello 1",
-  },
-  "c": {
-    "status": "done",
-    "value": true,
-  },
-  "d": {
-    "status": "done",
-    "value": {
-      "flag": true,
-      "value": 7,
-    },
-  },
-}
 `;
 
 exports[`saga function should should tell which events are consumed and ignore irrelevant events 1`] = `

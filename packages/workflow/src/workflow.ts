@@ -11,6 +11,8 @@ import type {
 import { Skip } from "./types";
 import { sleep } from "./utils";
 
+type SharedKey<T, R> = keyof T & keyof R
+
 export interface RunOptions {
   timeout?: number;
   now?: () => number;
@@ -94,16 +96,16 @@ export type Result<T, Node extends string = string> =
   | { status: "err"; error: Error; tags?: string[] }
   | { status: "skipped"; reason: string; tags?: string[] }
   | ({
-      status: "intr";
-      step: FullStepContext;
-      value?: T;
-      eventIdx?: number;
-      tags?: string[];
-    } & (
+    status: "intr";
+    step: FullStepContext;
+    value?: T;
+    eventIdx?: number;
+    tags?: string[];
+  } & (
       | InterruptedUntil
       | InterruptedValue
       | (InterruptedUntil &
-          InterruptedValue) // timeout
+        InterruptedValue) // timeout
     ));
 
 /**
@@ -125,13 +127,13 @@ export type Result<T, Node extends string = string> =
  */
 export class Workflow<
   T extends Record<string, DAGNode<unknown, string>>,
-  G extends string = string,
-> implements WorkflowContext<T>
-{
+  R extends Record<string, any> = Record<string, unknown>,
+> implements WorkflowContext<T> {
   private events: { [K in keyof T]?: StepEvent[] } = {};
   private snapshots: { [K in keyof T]?: [number, T[K]["value"]] } = {};
 
-  private tempResults: { [K in keyof T]?: Result<T[K]["value"]> } | null = null;
+  private tempResults: R | null = null;
+
   private tempNewEvents: { [K in keyof T]?: StepEventWithContext[] } | null =
     null;
   private newConsumedEvents: StepEventWithContext[] | null = null;
@@ -141,15 +143,26 @@ export class Workflow<
   private currentNode: keyof T | null = null;
   private currentKeys: string[] = [];
 
-  constructor(private nodes: T) {}
+  constructor(private nodes: T) { }
 
   get = <K extends string>(key: K): T[K]["value"] => {
-    const result = this.tempResults?.[key];
-    return result?.status === "done"
-      ? result.value
-      : result?.status === "intr"
-        ? result.value
-        : undefined;
+    const result = this.tempResults?.[key as keyof R] as any;
+    if (!result) return undefined;
+
+    // Handle single result
+    if (!Array.isArray(result)) {
+      if (result.status === "done") return result.value;
+      if (result.status === "intr") return result.value;
+      return undefined;
+    }
+
+    // Handle array of results - return first completed one
+    for (const r of result) {
+      if (r.status === "done") return r.value;
+      if (r.status === "intr") return r.value;
+    }
+
+    return undefined;
   };
 
   tags = () => [];
@@ -219,22 +232,33 @@ export class Workflow<
     return this.capture({ key: "random", schema: RandomSchema }, Math.random);
   };
 
-  private async executeNode<K extends keyof T>(
+  private async executeNode<K extends SharedKey<T, R>>(
     key: K,
     events: StepEvent[],
-  ): Promise<Result<T[K]["value"]>> {
+  ): Promise<R[K]> {
     const node = this.nodes[key];
 
     const pending = this.nodes[key].dependencies.filter((n) => {
       const result = this.tempResults?.[n];
-      return !(
-        result?.status === "done" ||
-        (result?.status === "intr" && result.value !== undefined)
+      if (!result) return true;
+
+      // Handle single result
+      if (!Array.isArray(result)) {
+        return !(
+          result.status === "done" ||
+          (result.status === "intr" && result.value !== undefined)
+        );
+      }
+
+      // Handle array of results - check if any instance is completed
+      return !result.some(
+        (r) =>
+          r.status === "done" || (r.status === "intr" && r.value !== undefined),
       );
     });
 
     if (pending.length > 0) {
-      return { status: "pending", nodes: pending };
+      return { status: "pending", nodes: pending } as R[K];
     }
 
     let idx = 0;
@@ -283,7 +307,7 @@ export class Workflow<
       let tags: string[] | undefined = undefined;
       try {
         if (node.instance) {
-          tags = await node.instance(this);
+          tags = node.instance(this);
         }
       } catch {
         // If instance generation fails, node won't have tags but continues without them
@@ -313,7 +337,7 @@ export class Workflow<
           }
         }
 
-        return { status: "done", value: value, tags };
+        return { status: "done", value: value, tags } as R[K];
       } catch (error) {
         if (error instanceof PromiseInterrupt) {
           try {
@@ -323,9 +347,9 @@ export class Workflow<
           } catch (error) {
             if (error instanceof Error) {
               // console.log(error);
-              return { status: "err", error, tags };
+              return { status: "err", error, tags } as R[K];
             }
-            return { status: "err", error: new Error("Unknown"), tags };
+            return { status: "err", error: new Error("Unknown"), tags } as R[K];
           }
         } else if (error instanceof InputInterrupt) {
           return {
@@ -335,18 +359,18 @@ export class Workflow<
             ...(value ? { value } : {}),
             ...(eventIdx ? { eventIdx } : {}),
             tags,
-          };
+          } as R[K];
         } else if (error instanceof Skip) {
           return {
             status: "skipped",
             reason: error.message,
             tags,
-          };
+          } as R[K];
         } else {
           if (error instanceof Error) {
-            return { status: "err", error, tags };
+            return { status: "err", error, tags } as R[K];
           }
-          return { status: "err", error: new Error("Unknown"), tags };
+          return { status: "err", error: new Error("Unknown"), tags } as R[K];
         }
       } finally {
         this.step = originalStep;
@@ -355,7 +379,7 @@ export class Workflow<
     return {
       status: "err",
       error: new Error("Too many promises in a single step!"),
-    };
+    } as R[K];
   }
 
   getDependencies<K extends keyof T>(key: K): T[K]["dependencies"] {
@@ -426,11 +450,11 @@ export class Workflow<
     return result;
   }
 
-  topologicalSort(): (keyof T)[] {
+  topologicalSort(): (SharedKey<T, R>)[] {
     const visited = new Set<keyof T>();
-    const result: (keyof T)[] = [];
+    const result: (SharedKey<T, R>)[] = [];
 
-    const visit = (node: keyof T) => {
+    const visit = (node: SharedKey<T, R>) => {
       if (visited.has(node)) return;
       visited.add(node);
       for (const dep of this.nodes[node].dependencies) {
@@ -439,7 +463,7 @@ export class Workflow<
       result.push(node);
     };
 
-    for (const node of Object.keys(this.nodes) as (keyof T)[]) {
+    for (const node of Object.keys(this.nodes) as (SharedKey<T, R>)[]) {
       visit(node);
     }
 
@@ -451,10 +475,22 @@ export class Workflow<
     for (const node of this.topologicalSort()) {
       this.currentNode = node;
       this.currentKeys.push(node as string);
-      this.tempResults![node] = await this.executeNode(
-        node,
-        incomingEvents.filter((e) => e.k[0] === node),
-      );
+
+      const nodeConfig = this.nodes[node];
+
+      // Check if this is a multi-instance node
+      if (nodeConfig.instances) {
+        // For now, return empty array for multiple instances
+        this.tempResults![node] = [] as any;
+      } else {
+        // Single instance node - execute normally
+        const result = await this.executeNode(
+          node,
+          incomingEvents.filter((e) => e.k[0] === node),
+        );
+        this.tempResults![node] = result;
+      }
+
       this.currentKeys.pop();
     }
   };
@@ -463,7 +499,7 @@ export class Workflow<
     incomingEvents: StepEvent[],
     opts?: RunOptions,
   ): Promise<{
-    values: { [K in keyof T]?: Result<T[K]["value"]> };
+    values: R;
     warnings?: Warning[];
     newEvents: StepEventWithContext[];
     timeout: boolean;
@@ -472,7 +508,7 @@ export class Workflow<
       throw new Error("Workflow is already running");
     }
     this.isRunning = true;
-    this.tempResults = {};
+    this.tempResults = {} as any;
     this.tempNewEvents = {};
     this.newConsumedEvents = [];
     this.tempRunOpts = opts ?? null;
@@ -502,13 +538,13 @@ export class Workflow<
     this.tempResults = null;
     this.tempNewEvents = null;
     this.isRunning = false;
-    return { values: results, newEvents, timeout, warnings };
+    return { values: results!, newEvents, timeout, warnings };
   }
 
   async run(
     incomingEvents?: StepEvent[],
     opts?: RunOptions,
-  ): Promise<{ [K in keyof T]?: Result<T[K]["value"]> }> {
+  ): Promise<R> {
     const {
       newEvents,
       values: results,
@@ -525,17 +561,33 @@ export class Workflow<
     }
     for (const k in results) {
       const result = results[k];
-      if (result?.status === "intr" && result.eventIdx) {
-        this.snapshots[k] = [result.eventIdx, result.value];
+      if (!result) continue;
+
+      // Handle single result
+      if (!Array.isArray(result)) {
+        if (result.status === "intr" && result.eventIdx) {
+          this.snapshots[k] = [result.eventIdx, result.value];
+        }
+      } else {
+        // Handle array of results - use first interrupted result for snapshots
+        const interruptedResult = result.find(
+          (r: Result<unknown>) => r.status === "intr" && r.eventIdx,
+        );
+        if (interruptedResult) {
+          this.snapshots[k] = [
+            interruptedResult.eventIdx,
+            interruptedResult.value,
+          ];
+        }
       }
     }
     return results;
   }
-  spawn(): Workflow<T, G> {
+  spawn(): Workflow<T, R> {
     return new Workflow(this.nodes);
   }
-  fork(): Workflow<T, G> {
-    const w = new Workflow(this.nodes);
+  fork(): Workflow<T, R> {
+    const w = new Workflow<T, R>(this.nodes);
     w.events = { ...this.events };
     w.snapshots = { ...this.snapshots };
     return w;

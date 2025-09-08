@@ -1,6 +1,15 @@
 import { type DoneWithNote, DoneWithNoteSchema, done } from "./schemas";
-import type { DAGNode, NodeConfig, WorkflowContext } from "./types";
-import { Workflow } from "./workflow";
+import type { DAGNode, NodeConfig, Without, WorkflowContext } from "./types";
+import { Workflow, type Result } from "./workflow";
+
+
+// type X = { a: number, b: number } | { a: number, c: number }
+// type X = { z?: number, a: number } & ({ b: number } | { c: number })
+// type K = keyof X;
+// type Without<T, K extends string | number | symbol> = T extends any ? Omit<T, K> : never;
+// type Y = Without<X, 'a'>;
+// let y: Y = { b: 0 };
+// type Y = Omit<X, 'a'>
 
 type NodeValue = string | number | boolean | (object & { then?: never });
 
@@ -20,6 +29,7 @@ type NodeValue = string | number | boolean | (object & { then?: never });
  */
 export class WorkflowBuilder<
   T extends Record<string, DAGNode<unknown, string>> = Record<never, unknown>,
+  R extends Record<string, any> = Record<never, unknown>,
 > {
   private nodes: T = {} as T;
 
@@ -27,12 +37,12 @@ export class WorkflowBuilder<
    * Shorthand for Task nodes - default completion tracking
    */
   addTask<K extends string, D extends Extract<keyof T, string>>(
-    config: Omit<
+    config: Without<
       NodeConfig<K, D, DoneWithNote>,
       "type" | "stepSchemas" | "schema" | "instances" | "sagaInstances"
     >,
     compute?: (context: WorkflowContext<T>) => void,
-  ): WorkflowBuilder<T & Record<K, DAGNode<DoneWithNote, D>>> {
+  ): WorkflowBuilder<T & Record<K, DAGNode<DoneWithNote, D>>, R & Record<K, Result<DoneWithNote>>> {
     return this.addNodeBase(
       {
         ...config,
@@ -54,14 +64,14 @@ export class WorkflowBuilder<
     V extends NodeValue,
     D extends Extract<keyof T, string>,
   >(
-    config: Omit<
+    config: Without<
       NodeConfig<K, D, V>,
       "type" | "stepSchemas" | "instances" | "sagaInstances"
     > & {
       schema: { static: V };
     },
     compute?: (context: WorkflowContext<T>) => void,
-  ) {
+  ): WorkflowBuilder<T & Record<K, DAGNode<V, D>>, R & Record<K, Result<V>>> {
     return this.addNodeBase({ ...config, type: "form" }, (ctx) => {
       compute?.(ctx);
       return ctx.step({
@@ -75,12 +85,12 @@ export class WorkflowBuilder<
    * Shorthand for Validation nodes - business rule enforcement
    */
   addValidation<K extends string, D extends Extract<keyof T, string>>(
-    config: Omit<
+    config: Without<
       NodeConfig<K, D, DoneWithNote>,
       "type" | "stepSchemas" | "schema" | "instances" | "sagaInstances"
     >,
     compute: (context: WorkflowContext<T>) => void,
-  ) {
+  ): WorkflowBuilder<T & Record<K, DAGNode<DoneWithNote, D>>, R & Record<K, Result<DoneWithNote>>> {
     return this.addNodeBase(
       { ...config, schema: DoneWithNoteSchema, type: "validation" },
       (step) => {
@@ -96,10 +106,10 @@ export class WorkflowBuilder<
     V extends NodeValue,
     D extends Extract<keyof T, string>,
   >(
-    config: Omit<NodeConfig<K, D, V>, "type">,
+    config: Without<NodeConfig<K, D, V>, "type">,
     compute: (context: WorkflowContext<T>) => V,
     saga?: (context: WorkflowContext<T>, value: V) => ["cont" | "halt", V],
-  ) {
+  ): WorkflowBuilder<T & Record<K, DAGNode<V, D>>, R & Record<K, Result<V>>> {
     return this.addNodeBase({ ...config, type: "complex" }, compute, saga);
   }
 
@@ -112,7 +122,7 @@ export class WorkflowBuilder<
     config: NodeConfig<K, D, V>,
     compute: (context: WorkflowContext<T>) => V,
     saga?: (context: WorkflowContext<T>, value: V) => ["cont" | "halt", V],
-  ): WorkflowBuilder<T & Record<K, DAGNode<V, D>>> {
+  ): WorkflowBuilder<T & Record<K, DAGNode<V, D>>, R & Record<K, Result<V>>> {
     const nodeKey = config.key;
     if (nodeKey in this.nodes) {
       throw new Error(`Node ${String(nodeKey)} already exists`);
@@ -143,16 +153,16 @@ export class WorkflowBuilder<
         description: config.description,
         type: config.type,
         stepSchemas: config.stepSchemas,
-        instances: config.instances,
-        instance: config.instance,
-        sagaInstances: config.sagaInstances,
+        instances: 'instances' in config ? config.instances : undefined,
+        instance: 'instance' in config ? config.instance : undefined,
+        sagaInstances: 'sagaInstances' in config ? config.sagaInstances : undefined,
         saga,
         schema: config.schema,
       },
     };
 
     // Create a new instance with the updated nodes
-    return new WorkflowBuilder<T & Record<K, DAGNode<V, D>>>(
+    return new WorkflowBuilder<T & Record<K, DAGNode<V, D>>, R & Record<K, Result<V>>>(
       newNodes as T & Record<K, DAGNode<V, D>>,
     );
   }
@@ -175,7 +185,7 @@ export class WorkflowBuilder<
    *
    * @returns  A new Workflow instance
    */
-  build(): Workflow<T> {
-    return new Workflow<T>(this.nodes);
+  build(): Workflow<T, R> {
+    return new Workflow<T, R>(this.nodes);
   }
 }
