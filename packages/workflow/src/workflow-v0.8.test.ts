@@ -699,6 +699,47 @@ describe("Workflow v0.8 - Four Node Types", () => {
       // but demonstrates the API structure needed
       expect(workflow).toBeDefined();
     });
+
+    test("should generate instance tags in run results", async () => {
+      const workflow = WorkflowBuilder.create()
+        .addNode(
+          {
+            key: "simple_task",
+            schema: t.Object({ result: t.String() }),
+            instance: () => ["tag1", "tag2", "context-demo"],
+          },
+          () => ({ result: "completed" }),
+        )
+        .addNode(
+          {
+            key: "failing_instance_task",
+            schema: t.Object({ result: t.String() }),
+            instance: () => {
+              throw new Error("Instance generation failed");
+            },
+          },
+          () => ({ result: "still works" }),
+        )
+        .build();
+
+      const results = await workflow.run();
+
+      // Node with successful instance function should have tags
+      expect(results.simple_task?.status).toBe("done");
+      if (results.simple_task?.status === "done") {
+        expect(results.simple_task.tags).toEqual([
+          "tag1",
+          "tag2",
+          "context-demo",
+        ]);
+      }
+
+      // Node with failed instance function should still work but have no tags
+      expect(results.failing_instance_task?.status).toBe("done");
+      if (results.failing_instance_task?.status === "done") {
+        expect(results.failing_instance_task.tags).toBeUndefined();
+      }
+    });
   });
 
   describe("Topology Method", () => {

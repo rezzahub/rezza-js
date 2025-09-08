@@ -300,6 +300,8 @@ export type DAGNode<V, D extends string, S extends object = object> = {
   stepSchemas?: Record<string, { input?: object; output?: object }>;
   /* v0.8: Instance generation function for fan-out patterns */
   instances?: (context: WorkflowContext) => string[][];
+  /* v0.8: Single node instance function for current node tags */
+  instance?: (context: WorkflowContext) => string[];
   /* v0.8: Dynamic instance expansion for saga patterns */
   sagaInstances?: (
     context: WorkflowContext & { getInstanceResults: () => unknown[] },
@@ -326,6 +328,8 @@ export interface NodeConfig<K extends string, D extends string, V> {
   stepSchemas?: Record<string, { input?: object; output?: object }>;
   /** Instance generation function for fan-out patterns */
   instances?: (context: WorkflowContext) => string[][];
+  /** Single node instance function for current node tags */
+  instance?: (context: WorkflowContext) => string[];
   /** Dynamic instance expansion for saga patterns */
   sagaInstances?: (
     context: WorkflowContext & { getInstanceResults: () => unknown[] },

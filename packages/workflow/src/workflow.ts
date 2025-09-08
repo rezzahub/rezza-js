@@ -89,11 +89,17 @@ export type StepEvent = Omit<StepEventWithContext, "c">;
  *         a time-based condition or a need for additional input.
  */
 export type Result<T, Node extends string = string> =
-  | { status: "pending"; nodes: Node[] }
-  | { status: "done"; value: T }
-  | { status: "err"; error: Error }
-  | { status: "skipped"; reason: string }
-  | ({ status: "intr"; step: FullStepContext; value?: T; eventIdx?: number } & (
+  | { status: "pending"; nodes: Node[]; tags?: string[] }
+  | { status: "done"; value: T; tags?: string[] }
+  | { status: "err"; error: Error; tags?: string[] }
+  | { status: "skipped"; reason: string; tags?: string[] }
+  | ({
+      status: "intr";
+      step: FullStepContext;
+      value?: T;
+      eventIdx?: number;
+      tags?: string[];
+    } & (
       | InterruptedUntil
       | InterruptedValue
       | (InterruptedUntil &
@@ -272,6 +278,18 @@ export class Workflow<
           key: [...this.currentKeys, context.key],
         });
       };
+
+      // Generate instance tags if instance function exists
+      let tags: string[] | undefined = undefined;
+      try {
+        if (node.instance) {
+          tags = await node.instance(this);
+        }
+      } catch {
+        // If instance generation fails, node won't have tags but continues without them
+        tags = undefined;
+      }
+
       let value: T[K]["value"] | undefined = undefined;
       let eventIdx = 0;
       try {
@@ -295,7 +313,7 @@ export class Workflow<
           }
         }
 
-        return { status: "done", value: value };
+        return { status: "done", value: value, tags };
       } catch (error) {
         if (error instanceof PromiseInterrupt) {
           try {
@@ -305,9 +323,9 @@ export class Workflow<
           } catch (error) {
             if (error instanceof Error) {
               // console.log(error);
-              return { status: "err", error };
+              return { status: "err", error, tags };
             }
-            return { status: "err", error: new Error("Unknown") };
+            return { status: "err", error: new Error("Unknown"), tags };
           }
         } else if (error instanceof InputInterrupt) {
           return {
@@ -316,17 +334,19 @@ export class Workflow<
             ...(error.waitUntil ? { waitUntil: error.waitUntil } : {}),
             ...(value ? { value } : {}),
             ...(eventIdx ? { eventIdx } : {}),
+            tags,
           };
         } else if (error instanceof Skip) {
           return {
             status: "skipped",
             reason: error.message,
+            tags,
           };
         } else {
           if (error instanceof Error) {
-            return { status: "err", error };
+            return { status: "err", error, tags };
           }
-          return { status: "err", error: new Error("Unknown") };
+          return { status: "err", error: new Error("Unknown"), tags };
         }
       } finally {
         this.step = originalStep;

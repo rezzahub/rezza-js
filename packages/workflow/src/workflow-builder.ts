@@ -144,6 +144,7 @@ export class WorkflowBuilder<
         type: config.type,
         stepSchemas: config.stepSchemas,
         instances: config.instances,
+        instance: config.instance,
         sagaInstances: config.sagaInstances,
         saga,
         schema: config.schema,
