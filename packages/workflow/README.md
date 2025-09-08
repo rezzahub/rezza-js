@@ -22,8 +22,7 @@ bun add @rezza.io/workflow
 import { WorkflowBuilder } from "@rezza.io/workflow";
 
 const workflow = WorkflowBuilder.create()
-  .addGroup("input")
-  .addNode({ key: "name", group: "input" }, () => "World")
+  .addNode({ key: "name" }, () => "World")
   .addNode({ key: "greeting", deps: ["name"] }, ({ get }) => `Hello, ${get("name")}!`)
   .build();
 

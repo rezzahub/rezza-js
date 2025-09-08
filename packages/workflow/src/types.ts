@@ -4,6 +4,21 @@ export type Warning = {
   context: StepContext;
 };
 
+/**
+ * Skip error class for conditional node execution
+ */
+export class Skip extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "Skip";
+  }
+}
+
+/**
+ * v0.8 Node Types
+ */
+export type NodeType = "task" | "form" | "complex" | "validation";
+
 export type StepInput = {
   /** Optional title for the step input */
   title?: string;
@@ -120,6 +135,8 @@ export interface WorkflowContext<
    * ```
    */
   get<K extends string>(key: K): T[K]["value"];
+
+  tags(): string[];
 
   /**
    * Requests user input for a step in the workflow.
@@ -259,12 +276,7 @@ export interface WorkflowContext<
 /**
  * Represents a node in a Directed Acyclic Graph (DAG) within the workflow.
  */
-export type DAGNode<
-  V,
-  D extends string,
-  G extends string = string,
-  S extends object = object,
-> = {
+export type DAGNode<V, D extends string, S extends object = object> = {
   /* The computed value of the node */
   value: V;
   /* Function to compute the node's value */
@@ -275,9 +287,51 @@ export type DAGNode<
   title?: string;
   /* Optional description of the node's purpose or functionality */
   description?: string;
-  /* Optional group to which the node belongs */
-  group?: G;
   /* Optional saga function for advanced flow control */
   saga?: (context: WorkflowContext, value: V) => ["cont" | "halt", V];
   schema: S;
+  /* v0.8: Node type */
+  type?: NodeType;
+  /* v0.8: Optional dependencies for partial completion */
+  optionalDeps?: D[];
+  /* v0.8: Minimum number of optional dependencies required */
+  optionalDepsLimit?: number;
+  /* v0.8: Step schemas for Complex nodes */
+  stepSchemas?: Record<string, { input?: object; output?: object }>;
+  /* v0.8: Instance generation function for fan-out patterns */
+  instances?: (context: WorkflowContext) => string[][];
+  /* v0.8: Dynamic instance expansion for saga patterns */
+  sagaInstances?: (
+    context: WorkflowContext & { getInstanceResults: () => unknown[] },
+  ) => string[][];
 };
+
+/**
+ * v0.8: Node configuration for addNode method
+ */
+export interface NodeConfig<K extends string, D extends string, V> {
+  /** The key for the new node */
+  key: K;
+  /** Node type */
+  type: NodeType;
+  /** Array of dependency keys (optional) */
+  deps?: D[];
+  /** Array of optional dependency keys */
+  optionalDeps?: D[];
+  /** Minimum number of optional dependencies required */
+  optionalDepsLimit?: number;
+  /** Schema for Form nodes */
+  schema: { static: V };
+  /** Step schemas for Complex nodes */
+  stepSchemas?: Record<string, { input?: object; output?: object }>;
+  /** Instance generation function for fan-out patterns */
+  instances?: (context: WorkflowContext) => string[][];
+  /** Dynamic instance expansion for saga patterns */
+  sagaInstances?: (
+    context: WorkflowContext & { getInstanceResults: () => unknown[] },
+  ) => string[][];
+  /** Optional title for the node */
+  title?: string;
+  /** Optional description of the node's purpose or functionality */
+  description?: string;
+}

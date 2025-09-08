@@ -8,6 +8,7 @@ import type {
   Warning,
   WorkflowContext,
 } from "./types";
+import { Skip } from "./types";
 import { sleep } from "./utils";
 
 export interface RunOptions {
@@ -91,6 +92,7 @@ export type Result<T, Node extends string = string> =
   | { status: "pending"; nodes: Node[] }
   | { status: "done"; value: T }
   | { status: "err"; error: Error }
+  | { status: "skipped"; reason: string }
   | ({ status: "intr"; step: FullStepContext; value?: T; eventIdx?: number } & (
       | InterruptedUntil
       | InterruptedValue
@@ -103,7 +105,6 @@ export type Result<T, Node extends string = string> =
  * Each node in the workflow can compute a value and depend on other nodes.
  *
  * @typeParam T - A record type where keys are node names and values are DAGNode types.
- * @typeParam G - A string type representing the group names in the workflow.
  *
  * The Workflow class provides methods to:
  * - Execute nodes in topological order
@@ -134,10 +135,7 @@ export class Workflow<
   private currentNode: keyof T | null = null;
   private currentKeys: string[] = [];
 
-  constructor(
-    private nodes: T,
-    private groups: Set<G>,
-  ) {}
+  constructor(private nodes: T) {}
 
   get = <K extends string>(key: K): T[K]["value"] => {
     const result = this.tempResults?.[key];
@@ -147,6 +145,8 @@ export class Workflow<
         ? result.value
         : undefined;
   };
+
+  tags = () => [];
 
   step = <T>(context: StepContext): T => {
     throw new InputInterrupt({
@@ -317,6 +317,11 @@ export class Workflow<
             ...(value ? { value } : {}),
             ...(eventIdx ? { eventIdx } : {}),
           };
+        } else if (error instanceof Skip) {
+          return {
+            status: "skipped",
+            reason: error.message,
+          };
         } else {
           if (error instanceof Error) {
             return { status: "err", error };
@@ -344,6 +349,14 @@ export class Workflow<
     title?: string;
     description?: string;
     isSaga?: boolean;
+    type?: string;
+    stepSchemas?: Record<string, { input?: object; output?: object }>;
+    optionalDeps?: string[];
+    optionalDepsLimit?: number;
+    instances?: (context: WorkflowContext) => string[][];
+    sagaInstances?: (
+      context: WorkflowContext & { getInstanceResults: () => unknown[] },
+    ) => string[][];
   }[] {
     const visited = new Set<keyof T>();
     const result: {
@@ -353,6 +366,14 @@ export class Workflow<
       title?: string;
       description?: string;
       isSaga?: boolean;
+      type?: string;
+      stepSchemas?: Record<string, { input?: object; output?: object }>;
+      optionalDeps?: string[];
+      optionalDepsLimit?: number;
+      instances?: (context: WorkflowContext) => string[][];
+      sagaInstances?: (
+        context: WorkflowContext & { getInstanceResults: () => unknown[] },
+      ) => string[][];
     }[] = [];
 
     const visit = (node: keyof T) => {
@@ -361,14 +382,21 @@ export class Workflow<
       for (const dep of this.nodes[node].dependencies) {
         visit(dep);
       }
-      result.push({
+      const nodeData = {
         node,
         dependencies: this.nodes[node].dependencies,
         schema: this.nodes[node].schema,
         title: this.nodes[node].title,
         isSaga: !!this.nodes[node].saga,
         description: this.nodes[node].description,
-      });
+        type: this.nodes[node].type,
+        stepSchemas: this.nodes[node].stepSchemas,
+        optionalDeps: this.nodes[node].optionalDeps,
+        optionalDepsLimit: this.nodes[node].optionalDepsLimit,
+        // ...(this.nodes[node].instances && { instances: this.nodes[node].instances }),
+        // ...(this.nodes[node].sagaInstances && { sagaInstances: this.nodes[node].sagaInstances }),
+      };
+      result.push(nodeData);
     };
 
     for (const node of Object.keys(this.nodes) as (keyof T)[]) {
@@ -484,10 +512,10 @@ export class Workflow<
     return results;
   }
   spawn(): Workflow<T, G> {
-    return new Workflow(this.nodes, this.groups);
+    return new Workflow(this.nodes);
   }
   fork(): Workflow<T, G> {
-    const w = new Workflow(this.nodes, this.groups);
+    const w = new Workflow(this.nodes);
     w.events = { ...this.events };
     w.snapshots = { ...this.snapshots };
     return w;

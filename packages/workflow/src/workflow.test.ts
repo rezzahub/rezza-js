@@ -1,9 +1,9 @@
-import { describe, expect, test } from "bun:test";
 import dedent from "dedent";
 import { Heap } from "heap-js";
 import _ from "lodash";
+import { describe, expect, test } from "vitest";
 import { type StepEvent, WorkflowBuilder, parse, t } from ".";
-import sleepWorkflow from "../examples/sleep";
+import sleepWorkflow from "./examples/sleep";
 import { DoneSchema, RandomSchema } from "./schemas";
 import { sleep } from "./utils";
 
@@ -116,27 +116,7 @@ describe("Workflow", () => {
     expect(exec3.newEvents.map(({ ts: _ts, ...e }) => e)).toMatchSnapshot();
     expect(exec3.values.c?.status).toBe("err");
   });
-  test("simple group", async () => {
-    const workflow = WorkflowBuilder.create()
-      .addGroup("groupA")
-      .addNode({ key: "node1", group: "groupA", schema: t.Number() }, () => 1)
-      .addGroup("groupB")
-      .addNode(
-        {
-          key: "node2",
-          group: "groupB",
-          deps: ["node1"],
-          schema: t.Number(),
-        },
-        ({ get }) => get("node1") + 1,
-      )
-      .addNode(
-        { key: "node3", deps: ["node2"], schema: t.Number() },
-        ({ get }) => get("node2") * 2,
-      )
-      .build();
-    await workflow.run([]);
-  });
+
   test("waitUntil", async () => {
     const until = Date.now() + 10;
     const workflow = WorkflowBuilder.create()

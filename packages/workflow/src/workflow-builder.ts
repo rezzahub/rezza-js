@@ -1,16 +1,16 @@
-import type { DAGNode, WorkflowContext } from "./types";
+import { type DoneWithNote, DoneWithNoteSchema, done } from "./schemas";
+import type { DAGNode, NodeConfig, WorkflowContext } from "./types";
 import { Workflow } from "./workflow";
 
 type NodeValue = string | number | boolean | (object & { then?: never });
 
 /**
- * A builder class for creating workflows with typed nodes and groups.
+ * A builder class for creating workflows with typed nodes
  *
  * @example
  * ```typescript
  * const workflow = WorkflowBuilder.create()
- *   .addGroup("input")
- *   .addNode({ key: "name", group: "input" }, () => "World")
+ *   .addNode({ key: "name" }, () => "World")
  *   .addNode({ key: "greeting", deps: ["name"] }, ({ get }) => `Hello, ${get("name")}!`)
  *   .build();
  *
@@ -20,52 +20,100 @@ type NodeValue = string | number | boolean | (object & { then?: never });
  */
 export class WorkflowBuilder<
   T extends Record<string, DAGNode<unknown, string>> = Record<never, unknown>,
-  G extends string = string,
 > {
   private nodes: T = {} as T;
-  private groups: Set<G> = new Set();
 
   /**
-   * Adds a new group to the workflow.
-   *
-   * @param group - The name of the new group
-   * @returns  A new WorkflowBuilder instance with the added group
+   * Shorthand for Task nodes - default completion tracking
    */
-  addGroup<NewG extends string>(group: NewG): WorkflowBuilder<T, G | NewG> {
-    const newGroups = new Set<G | NewG>(this.groups);
-    newGroups.add(group);
-    return new WorkflowBuilder<T, G | NewG>(this.nodes, newGroups);
+  addTask<K extends string, D extends Extract<keyof T, string>>(
+    config: Omit<
+      NodeConfig<K, D, DoneWithNote>,
+      "type" | "stepSchemas" | "schema" | "instances" | "sagaInstances"
+    >,
+    compute?: (context: WorkflowContext<T>) => void,
+  ): WorkflowBuilder<T & Record<K, DAGNode<DoneWithNote, D>>> {
+    return this.addNodeBase(
+      {
+        ...config,
+        type: "task",
+        schema: DoneWithNoteSchema,
+      },
+      (ctx) => {
+        compute?.(ctx);
+        return done();
+      },
+    );
   }
 
   /**
-   * Adds a new node to the workflow.
-   *
-   * @param config - Configuration object for the new node
-   * @param compute - Synchronous function to compute the node's value
-   * @returns A new WorkflowBuilder instance with the added node
+   * Shorthand for Form nodes - data collection with schema validation
    */
+  addForm<
+    K extends string,
+    V extends NodeValue,
+    D extends Extract<keyof T, string>,
+  >(
+    config: Omit<
+      NodeConfig<K, D, V>,
+      "type" | "stepSchemas" | "instances" | "sagaInstances"
+    > & {
+      schema: { static: V };
+    },
+    compute?: (context: WorkflowContext<T>) => void,
+  ) {
+    return this.addNodeBase({ ...config, type: "form" }, (ctx) => {
+      compute?.(ctx);
+      return ctx.step({
+        ...config,
+        key: config.key,
+      });
+    });
+  }
+
+  /**
+   * Shorthand for Validation nodes - business rule enforcement
+   */
+  addValidation<K extends string, D extends Extract<keyof T, string>>(
+    config: Omit<
+      NodeConfig<K, D, DoneWithNote>,
+      "type" | "stepSchemas" | "schema" | "instances" | "sagaInstances"
+    >,
+    compute: (context: WorkflowContext<T>) => void,
+  ) {
+    return this.addNodeBase(
+      { ...config, schema: DoneWithNoteSchema, type: "validation" },
+      (step) => {
+        compute?.(step);
+        return done();
+      },
+    );
+  }
+
+  // Public addNode method that defaults to complex type
   addNode<
     K extends string,
     V extends NodeValue,
     D extends Extract<keyof T, string>,
   >(
-    config: {
-      /** The key for the new node */
-      key: K extends keyof T ? never : K;
-      /** The group to which the node belongs (optional) */
-      group?: G;
-      /* Optional title for the node */
-      title?: string;
-      /* Optional description of the node's purpose or functionality */
-      description?: string;
-      /** Array of dependency keys (optional) */
-      deps?: D[];
-      schema: { static: V };
-    },
+    config: Omit<NodeConfig<K, D, V>, "type">,
     compute: (context: WorkflowContext<T>) => V,
     saga?: (context: WorkflowContext<T>, value: V) => ["cont" | "halt", V],
-  ): WorkflowBuilder<T & Record<K, DAGNode<V, D>>, G> {
-    const { key: nodeKey, group, schema } = config;
+  ) {
+    return this.addNodeBase({ ...config, type: "complex" }, compute, saga);
+  }
+
+  // Implementation that handles both v0.8 and backward compatibility signatures
+  private addNodeBase<
+    K extends string,
+    V extends NodeValue,
+    D extends Extract<keyof T, string>,
+  >(
+    config: NodeConfig<K, D, V>,
+    compute: (context: WorkflowContext<T>) => V,
+    saga?: (context: WorkflowContext<T>, value: V) => ["cont" | "halt", V],
+  ): WorkflowBuilder<T & Record<K, DAGNode<V, D>>> {
+    const nodeKey = config.key;
     if (nodeKey in this.nodes) {
       throw new Error(`Node ${String(nodeKey)} already exists`);
     }
@@ -76,23 +124,35 @@ export class WorkflowBuilder<
         throw new Error(`Dependency ${String(dep)} does not exist`);
       }
     }
+
+    for (const dep of config.optionalDeps ?? []) {
+      if (!(dep in this.nodes)) {
+        throw new Error(`Optional dependency ${String(dep)} does not exist`);
+      }
+    }
+
+    // Handle different node types
     const newNodes = {
       ...this.nodes,
       [nodeKey]: {
-        compute: compute,
+        compute,
         dependencies: config.deps ?? [],
+        optionalDeps: config.optionalDeps,
+        optionalDepsLimit: config.optionalDepsLimit,
         title: config.title,
         description: config.description,
-        group,
+        type: config.type,
+        stepSchemas: config.stepSchemas,
+        instances: config.instances,
+        sagaInstances: config.sagaInstances,
         saga,
-        schema,
+        schema: config.schema,
       },
     };
 
     // Create a new instance with the updated nodes
-    return new WorkflowBuilder<T & Record<K, DAGNode<V, D, G>>, G>(
-      newNodes as T & Record<K, DAGNode<V, D, G>>,
-      this.groups,
+    return new WorkflowBuilder<T & Record<K, DAGNode<V, D>>>(
+      newNodes as T & Record<K, DAGNode<V, D>>,
     );
   }
 
@@ -102,12 +162,11 @@ export class WorkflowBuilder<
    * @returns A new WorkflowBuilder instance
    */
   static create(): WorkflowBuilder {
-    return new WorkflowBuilder({}, new Set<string>());
+    return new WorkflowBuilder({});
   }
 
-  private constructor(nodes: T, groups: Set<G>) {
+  private constructor(nodes: T) {
     this.nodes = nodes;
-    this.groups = groups;
   }
 
   /**
@@ -115,7 +174,7 @@ export class WorkflowBuilder<
    *
    * @returns  A new Workflow instance
    */
-  build(): Workflow<T, G> {
-    return new Workflow<T, G>(this.nodes, this.groups);
+  build(): Workflow<T> {
+    return new Workflow<T>(this.nodes);
   }
 }
