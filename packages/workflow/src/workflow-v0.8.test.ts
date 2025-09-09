@@ -112,7 +112,7 @@ describe("Workflow v0.8 - Four Node Types", () => {
 
       const result = await workflow.run([
         {
-          k: ["order_details", "order_details"],
+          k: ["order_details", "form_input"],
           v: { items: ["pizza", "salad"], amount: 25.5 },
           ts: Date.now(),
         },
@@ -620,7 +620,13 @@ describe("Workflow v0.8 - Four Node Types", () => {
             deps: ["product_list"],
             schema: DoneWithNoteSchema,
             instances: ({ get }) => {
-              const { products } = get("product_list") as {
+              const productListResult = get("product_list");
+
+              if (!productListResult) {
+                return [];
+              }
+
+              const { products } = productListResult as {
                 products: Array<{ id: string; name: string; stock: number }>;
               };
               return products.map((product) => [`item:${product.id}`]);
@@ -639,8 +645,12 @@ describe("Workflow v0.8 - Four Node Types", () => {
             const { products } = get("product_list") as {
               products: Array<{ id: string; name: string; stock: number }>;
             };
-            const currentProduct = products[0]; // Using first product for demo
-            const itemId = tags()[0].split(":")[1];
+            const itemId = tags[0].split(":")[1];
+            const currentProduct = products.find(p => p.id === itemId);
+
+            if (!currentProduct) {
+              throw new Error(`Product ${itemId} not found`);
+            }
 
             // FILTERING LOGIC: Skip out of stock items
             if (currentProduct.stock <= 0) {
@@ -682,7 +692,7 @@ describe("Workflow v0.8 - Four Node Types", () => {
             },
           },
           ({ step, tags }) => {
-            const itemId = tags()[0].split(":")[1];
+            const itemId = tags[0].split(":")[1];
 
             // Use the item ID for loading logic
 
@@ -695,9 +705,40 @@ describe("Workflow v0.8 - Four Node Types", () => {
         )
         .build();
 
-      // This is a complex test that would need full instance support
-      // but demonstrates the API structure needed
-      expect(workflow).toBeDefined();
+      // Execute workflow with product data
+      const results = await workflow.run([
+        {
+          k: ["product_list", "form_input"],
+          v: {
+            products: [
+              { id: "p1", name: "Widget", stock: 5 },
+              { id: "p2", name: "Gadget", stock: 0 }, // Out of stock - should be skipped
+              { id: "p3", name: "Tool", stock: 3 },
+            ],
+          },
+          ts: Date.now(),
+        },
+      ]);
+
+      // Verify product_list is completed
+      expect(results.product_list?.status).toBe("done");
+
+      // Verify package_items returns array of results (one per product)
+      expect(Array.isArray(results.package_items)).toBe(true);
+      const packageResults = results.package_items;
+
+      // Should have results for 3 products (even if some fail/skip)
+      expect(packageResults).toHaveLength(3);
+
+      // Product 1 and 3 should be interrupted (waiting for packaging step)
+      // Product 2 should be skipped (out of stock)
+      const p1Result = packageResults.find((r) => r.tags?.includes("item:p1"));
+      const p2Result = packageResults.find((r) => r.tags?.includes("item:p2"));
+      const p3Result = packageResults.find((r) => r.tags?.includes("item:p3"));
+
+      expect(p1Result?.status).toBe("intr");
+      expect(p2Result?.status).toBe("skipped");
+      expect(p3Result?.status).toBe("intr");
     });
 
     test("should generate instance tags in run results", async () => {

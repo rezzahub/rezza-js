@@ -4,6 +4,7 @@ import { NowSchema, RandomSchema, WaitSchema } from "./schemas";
 import type {
   DAGNode,
   FullStepContext,
+  GetNodeValue,
   StepContext,
   Warning,
   WorkflowContext,
@@ -11,7 +12,7 @@ import type {
 import { Skip } from "./types";
 import { sleep } from "./utils";
 
-type SharedKey<T, R> = keyof T & keyof R
+type SharedKey<T, R> = keyof T & keyof R;
 
 export interface RunOptions {
   timeout?: number;
@@ -126,7 +127,8 @@ export type Result<T, Node extends string = string> =
  * `now`, `sleep`, `waitUntil`, and `random`.
  */
 export class Workflow<
-  T extends Record<string, DAGNode<unknown, string>>,
+  T extends Record<string, DAGNode<unknown, string, boolean>>,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   R extends Record<string, any> = Record<string, unknown>,
 > implements WorkflowContext<T> {
   private events: { [K in keyof T]?: StepEvent[] } = {};
@@ -145,27 +147,29 @@ export class Workflow<
 
   constructor(private nodes: T) { }
 
-  get = <K extends string>(key: K): T[K]["value"] => {
-    const result = this.tempResults?.[key as keyof R] as any;
-    if (!result) return undefined;
+  get = <K extends string>(key: K): GetNodeValue<T[K]> => {
+    const result = this.tempResults?.[key as keyof R] as
+      | Result<T, K>
+      | Result<T, K>[];
+    if (!result) return undefined as any;
 
     // Handle single result
     if (!Array.isArray(result)) {
-      if (result.status === "done") return result.value;
-      if (result.status === "intr") return result.value;
-      return undefined;
+      if (result.status === "done") return result.value as any;
+      if (result.status === "intr") return result.value as any;
+      return undefined as any;
     }
 
-    // Handle array of results - return first completed one
+    // Handle array of results - return first completed on as anye
     for (const r of result) {
-      if (r.status === "done") return r.value;
-      if (r.status === "intr") return r.value;
+      if (r.status === "done") return r.value as any;
+      if (r.status === "intr") return r.value as any;
     }
 
-    return undefined;
+    return undefined as any;
   };
 
-  tags = () => [];
+  tags: string[] = [];
 
   step = <T>(context: StepContext): T => {
     throw new InputInterrupt({
@@ -450,9 +454,9 @@ export class Workflow<
     return result;
   }
 
-  topologicalSort(): (SharedKey<T, R>)[] {
+  topologicalSort(): SharedKey<T, R>[] {
     const visited = new Set<keyof T>();
-    const result: (SharedKey<T, R>)[] = [];
+    const result: SharedKey<T, R>[] = [];
 
     const visit = (node: SharedKey<T, R>) => {
       if (visited.has(node)) return;
@@ -463,7 +467,7 @@ export class Workflow<
       result.push(node);
     };
 
-    for (const node of Object.keys(this.nodes) as (SharedKey<T, R>)[]) {
+    for (const node of Object.keys(this.nodes) as SharedKey<T, R>[]) {
       visit(node);
     }
 
@@ -480,8 +484,43 @@ export class Workflow<
 
       // Check if this is a multi-instance node
       if (nodeConfig.instances) {
-        // For now, return empty array for multiple instances
-        this.tempResults![node] = [] as any;
+        // Execute instances function to get instance tags
+        const instanceTagArrays = await nodeConfig.instances(this);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const results: any[] = [];
+
+        // Execute the node for each instance with specific tags
+        for (const instanceTags of instanceTagArrays) {
+          // Temporarily set the tags for this instance execution
+          const originalTags = this.tags;
+          this.tags = instanceTags;
+
+          try {
+            const result = await this.executeNode(
+              node,
+              incomingEvents.filter((e) => e.k[0] === node),
+            );
+            // Add the instance tags to the result
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            (result as any).tags = instanceTags;
+            results.push(result);
+          } catch (error) {
+            // Handle individual instance errors - create error result for this instance
+            const errorResult = {
+              status: "err" as const,
+              error:
+                error instanceof Error ? error : new Error("Unknown error"),
+              tags: instanceTags,
+            };
+            results.push(errorResult);
+          } finally {
+            // Restore original tags array
+            this.tags = originalTags;
+          }
+        }
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        this.tempResults![node] = results as any;
       } else {
         // Single instance node - execute normally
         const result = await this.executeNode(
@@ -508,6 +547,7 @@ export class Workflow<
       throw new Error("Workflow is already running");
     }
     this.isRunning = true;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     this.tempResults = {} as any;
     this.tempNewEvents = {};
     this.newConsumedEvents = [];
@@ -541,10 +581,7 @@ export class Workflow<
     return { values: results!, newEvents, timeout, warnings };
   }
 
-  async run(
-    incomingEvents?: StepEvent[],
-    opts?: RunOptions,
-  ): Promise<R> {
+  async run(incomingEvents?: StepEvent[], opts?: RunOptions): Promise<R> {
     const {
       newEvents,
       values: results,

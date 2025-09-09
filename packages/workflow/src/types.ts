@@ -1,3 +1,5 @@
+import { TSchema } from "@sinclair/typebox";
+
 export type Warning = {
   type: "context_updated";
   step: string[];
@@ -19,17 +21,17 @@ export class Skip extends Error {
  */
 export type NodeType = "task" | "form" | "complex" | "validation";
 
-export type StepInput = {
-  /** Optional title for the step input */
+export type StepReference = {
+  /** Optional title for the step reference */
   title?: string;
 
   /** Optional instruction text to guide user input */
   instruction?: string;
 
-  /** Array of strings identifying this step input. Warns if key and provided event do not match */
+  /** Array of strings identifying this step reference. Warns if key and provided event do not match */
   key: string[];
 
-  /** Whether this input contains personally identifiable information (PII) */
+  /** Whether this reference contains personally identifiable information (PII) */
   pii?: boolean;
 
   action?:
@@ -69,6 +71,11 @@ export type StepInput = {
   );
 
 /**
+ * @deprecated Use StepReference instead. This alias will be removed in a future version.
+ */
+export type StepInput = StepReference;
+
+/**
  * Represents the context for a step in the workflow.
  */
 export type FullStepContext = Omit<StepContext, "key" | "schema"> & {
@@ -100,7 +107,13 @@ export interface StepContext<T = unknown> {
   /** Schema definition for the step with static typing */
   schema: { static: T };
 
-  /** Array of inputs required for this step */
+  /** Array of references provided for this step */
+  references?: StepReference[];
+
+  /** 
+   * @deprecated Use references instead. This field will be removed in a future version.
+   * Array of inputs required for this step 
+   */
   inputs?: StepInput[];
 }
 
@@ -111,9 +124,9 @@ export interface StepContext<T = unknown> {
  * time-based operations.
  */
 export interface WorkflowContext<
-  T extends Record<string, DAGNode<unknown, string>> = Record<
+  T extends Record<string, DAGNode<unknown, string, boolean>> = Record<
     string,
-    DAGNode<unknown, string>
+    DAGNode<unknown, string, boolean>
   >,
 > {
   /**
@@ -134,9 +147,10 @@ export interface WorkflowContext<
    * // The 'greeting' node's compute function uses get to access 'userInfo'
    * ```
    */
-  get<K extends string>(key: K): T[K]["value"];
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  get<K extends string>(key: K): GetNodeValue<T[K]>;
 
-  tags(): string[];
+  tags: string[];
 
   /**
    * Requests user input for a step in the workflow.
@@ -276,7 +290,7 @@ export interface WorkflowContext<
 /**
  * Represents a node in a Directed Acyclic Graph (DAG) within the workflow.
  */
-export type DAGNode<V, D extends string, S extends object = object> = {
+export type DAGNode<V, D extends string, P extends boolean, S extends TSchema = TSchema> = {
   /* The computed value of the node */
   value: V;
   /* Function to compute the node's value */
@@ -291,7 +305,8 @@ export type DAGNode<V, D extends string, S extends object = object> = {
   saga?: (context: WorkflowContext, value: V) => ["cont" | "halt", V];
   schema: S;
   /* v0.8: Node type */
-  type?: NodeType;
+  type: NodeType;
+  multiple: P,
   /* v0.8: Optional dependencies for partial completion */
   optionalDeps?: D[];
   /* v0.8: Minimum number of optional dependencies required */
@@ -308,7 +323,18 @@ export type DAGNode<V, D extends string, S extends object = object> = {
   ) => string[][];
 };
 
-export type Without<T, K extends string | number | symbol> = T extends any ? Omit<T, K> : never;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type Without<T, K extends string | number | symbol> = T extends any
+  ? Omit<T, K>
+  : never;
+
+/**
+ * Helper type to get the correct return type from get() method based on whether node is multiple instances
+ */
+export type GetNodeValue<T extends DAGNode<any, any, boolean>> =
+  T extends DAGNode<infer V, any, true> ? (V | undefined)[] :
+  T extends DAGNode<infer V, any, false> ? V :
+  unknown;
 
 /**
  * v0.8: Node configuration for addNode method
@@ -325,7 +351,7 @@ export type NodeConfig<K extends string, D extends string, V> = {
   /** Minimum number of optional dependencies required */
   optionalDepsLimit?: number;
   /** Schema for Form nodes */
-  schema: { static: V };
+  schema: TSchema & { static: V };
   /** Step schemas for Complex nodes */
   stepSchemas?: Record<string, { input?: object; output?: object }>;
   /** Instance generation function for fan-out patterns */
@@ -340,10 +366,11 @@ export type NodeConfig<K extends string, D extends string, V> = {
   /** Optional description of the node's purpose or functionality */
   description?: string;
 } & (
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     | {}
     | { instance: (context: WorkflowContext) => string[] }
     | {
-      instances: (context: WorkflowContext) => string[][],
-      instancesSaga: (context: WorkflowContext, results: V[]) => string[][],
+      instances: (context: WorkflowContext) => string[][];
+      instancesSaga: (context: WorkflowContext, results: V[]) => string[][];
     }
   );
